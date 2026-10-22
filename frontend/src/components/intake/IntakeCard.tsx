@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sparkles, Calendar, DollarSign, Award, AlertCircle, ArrowRight, Loader2, RefreshCw } from 'lucide-react';
 import { BentoCard } from '../bento/BentoCard';
 
@@ -39,6 +39,52 @@ const PRESETS = [
 ];
 
 const AVAILABLE_CERTS = ['ISO 9001', 'ISO 27001', 'SOC 2', 'HIPAA', 'CE', 'RoHS', 'ITAR'];
+const DRAFT_STORAGE_KEY = 'sourcyn:intake-draft';
+
+interface IntakeDraft {
+  text: string;
+  budget: number;
+  deliveryDate: string;
+  currency: string;
+  selectedCerts: string[];
+}
+
+const DEFAULT_DRAFT: IntakeDraft = {
+  text: PRESETS[0].desc,
+  budget: PRESETS[0].budget,
+  deliveryDate: '2026-12-15',
+  currency: 'USD',
+  selectedCerts: PRESETS[0].certs,
+};
+
+const getInitialDraft = (): IntakeDraft => {
+  try {
+    const savedDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+    if (!savedDraft) return DEFAULT_DRAFT;
+
+    const parsed = JSON.parse(savedDraft) as Partial<IntakeDraft>;
+    if (
+      typeof parsed.text !== 'string' ||
+      typeof parsed.budget !== 'number' ||
+      typeof parsed.deliveryDate !== 'string' ||
+      typeof parsed.currency !== 'string' ||
+      !Array.isArray(parsed.selectedCerts)
+    ) {
+      return DEFAULT_DRAFT;
+    }
+
+    return {
+      text: parsed.text,
+      budget: parsed.budget,
+      deliveryDate: parsed.deliveryDate,
+      currency: parsed.currency,
+      selectedCerts: parsed.selectedCerts.filter((cert): cert is string => typeof cert === 'string'),
+    };
+  } catch (error) {
+    console.warn('Unable to restore the saved intake draft', error);
+    return DEFAULT_DRAFT;
+  }
+};
 
 export const IntakeCard: React.FC<IntakeCardProps> = ({
   onStartEvaluation,
@@ -46,12 +92,26 @@ export const IntakeCard: React.FC<IntakeCardProps> = ({
   clarificationQuestions = [],
   onSubmitClarification,
 }) => {
-  const [text, setText] = useState<string>(PRESETS[0].desc);
-  const [budget, setBudget] = useState<number>(PRESETS[0].budget);
-  const [deliveryDate, setDeliveryDate] = useState<string>('2026-12-15');
-  const [currency, setCurrency] = useState<string>('USD');
-  const [selectedCerts, setSelectedCerts] = useState<string[]>(PRESETS[0].certs);
+  const [initialDraft] = useState<IntakeDraft>(getInitialDraft);
+  const [text, setText] = useState<string>(initialDraft.text);
+  const [budget, setBudget] = useState<number>(initialDraft.budget);
+  const [deliveryDate, setDeliveryDate] = useState<string>(initialDraft.deliveryDate);
+  const [currency, setCurrency] = useState<string>(initialDraft.currency);
+  const [selectedCerts, setSelectedCerts] = useState<string[]>(initialDraft.selectedCerts);
   const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    const saveTimer = window.setTimeout(() => {
+      try {
+        const draft: IntakeDraft = { text, budget, deliveryDate, currency, selectedCerts };
+        window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
+      } catch (error) {
+        console.warn('Unable to save the intake draft', error);
+      }
+    }, 300);
+
+    return () => window.clearTimeout(saveTimer);
+  }, [text, budget, deliveryDate, currency, selectedCerts]);
 
   const toggleCert = (cert: string) => {
     setSelectedCerts((prev) =>
@@ -63,6 +123,14 @@ export const IntakeCard: React.FC<IntakeCardProps> = ({
     setText(preset.desc);
     setBudget(preset.budget);
     setSelectedCerts(preset.certs);
+  };
+
+  const handleResetDraft = () => {
+    setText(DEFAULT_DRAFT.text);
+    setBudget(DEFAULT_DRAFT.budget);
+    setDeliveryDate(DEFAULT_DRAFT.deliveryDate);
+    setCurrency(DEFAULT_DRAFT.currency);
+    setSelectedCerts(DEFAULT_DRAFT.selectedCerts);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -93,7 +161,17 @@ export const IntakeCard: React.FC<IntakeCardProps> = ({
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-xs font-semibold text-slate-300">Quick-Load RFP Templates</label>
-            <span className="text-[11px] text-slate-500">Auto-populates parameters</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500">Auto-populates parameters</span>
+              <button
+                type="button"
+                onClick={handleResetDraft}
+                className="text-[11px] text-slate-500 hover:text-slate-300 transition"
+                title="Restore the default intake template"
+              >
+                Reset draft
+              </button>
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-2">
             {PRESETS.map((p) => (
